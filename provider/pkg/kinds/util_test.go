@@ -28,9 +28,10 @@ func TestIsPatchURN(t *testing.T) {
 			false,
 		},
 	}
+	//TODO(rquitales): fix this test!
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := IsPatchURN(tc.urn); got != tc.want {
+			if got := IsPatchURN(tc.urn, "FIXME"); got != tc.want {
 				t.Errorf("IsPatchURN() = %v, want %v", got, tc.want)
 			}
 		})

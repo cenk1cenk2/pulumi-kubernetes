@@ -260,6 +260,8 @@ func (k *kubeProvider) GetSchema(ctx context.Context, req *pulumirpc.GetSchemaRe
 			continue
 		}
 
+		p.Version = k.version
+
 		b, err := json.Marshal(*p)
 		if err != nil {
 			log.Printf("failed to marshal CRD schema: %v", err)
@@ -1353,11 +1355,6 @@ func (k *kubeProvider) Check(ctx context.Context, req *pulumirpc.CheckRequest) (
 			"and cannot be created directly. Use the underlying resource type instead")
 	}
 
-	if !k.serverSideApplyMode && kinds.IsPatchURN(urn) {
-		return nil, fmt.Errorf("patch resources require Server-Side Apply mode, which is enabled using the " +
-			"`enableServerSideApply` Provider config")
-	}
-
 	label := fmt.Sprintf("%s.Check(%s)", k.label(), urn)
 	logger.V(9).Infof("%s executing", label)
 
@@ -1387,12 +1384,17 @@ func (k *kubeProvider) Check(ctx context.Context, req *pulumirpc.CheckRequest) (
 	oldInputs := propMapToUnstructured(olds)
 	newInputs := propMapToUnstructured(news)
 
+	if !k.serverSideApplyMode && kinds.IsPatchURN(urn, newInputs.GetKind()) {
+		return nil, fmt.Errorf("patch resources require Server-Side Apply mode, which is enabled using the " +
+			"`enableServerSideApply` Provider config")
+	}
+
 	newInputs, err = normalizeInputs(newInputs)
 	if err != nil {
 		return nil, err
 	}
 
-	if k.serverSideApplyMode && kinds.IsPatchURN(urn) {
+	if k.serverSideApplyMode && kinds.IsPatchURN(urn, newInputs.GetKind()) {
 		if len(newInputs.GetName()) == 0 {
 			return nil, fmt.Errorf("patch resources require the `.metadata.name` field to be set")
 		}
@@ -1707,7 +1709,7 @@ func (k *kubeProvider) Diff(ctx context.Context, req *pulumirpc.DiffRequest) (*p
 	if len(patchObj) != 0 {
 		// Changing the identity of the resource always causes a replacement.
 		forceNewFields := []string{".metadata.name", ".metadata.namespace"}
-		if !kinds.IsPatchURN(urn) { // Patch resources can be updated in place for all other properties.
+		if !kinds.IsPatchURN(urn, newInputs.GetKind()) { // Patch resources can be updated in place for all other properties.
 			forceNewFields = k.forceNewProperties(newInputs)
 		}
 		if detailedDiff, err = convertPatchToDiff(patchObj, patchBase, newInputs.Object, oldLivePruned.Object, forceNewFields...); err != nil {
@@ -1859,7 +1861,7 @@ func (k *kubeProvider) Create(
 	// 2: The cluster is unreachable or the resource GVK does not exist
 	// 3: The resource is a Patch resource
 	// 4: We are in client-side-apply mode
-	skipPreview := hasComputedValue(newInputs) || !k.gvkExists(newInputs) || kinds.IsPatchURN(urn) || !k.serverSideApplyMode
+	skipPreview := hasComputedValue(newInputs) || !k.gvkExists(newInputs) || kinds.IsPatchURN(urn, newInputs.GetKind()) || !k.serverSideApplyMode
 	// If this is a preview and the input meets one of the skip criteria, then return them as-is. This is compatible
 	// with prior behavior implemented by the Pulumi engine.
 	if req.GetPreview() && skipPreview {
@@ -2590,7 +2592,7 @@ func (k *kubeProvider) Delete(ctx context.Context, req *pulumirpc.DeleteRequest)
 			// to consider the CR to be deleted as well in this case.
 			return &pbempty.Empty{}, nil
 		}
-		if kinds.IsPatchURN(urn) && await.IsDeleteRequiredFieldErr(awaitErr) {
+		if kinds.IsPatchURN(urn, current.GetKind()) && await.IsDeleteRequiredFieldErr(awaitErr) {
 			if cause, ok := apierrors.StatusCause(awaitErr, metav1.CauseTypeFieldValueRequired); ok {
 				awaitErr = fmt.Errorf(
 					"this Patch resource is currently managing a required field, so it can't be deleted "+
