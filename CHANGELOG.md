@@ -26,6 +26,9 @@
 - A warning is now emitted if an object has finalizers which might be blocking
   deletion. (https://github.com/pulumi/pulumi-kubernetes/issues/1418)
 
+- Deletion will now emit warnings for any Kubernetes "Warning" Events
+  associated with the resource. (https://github.com/pulumi/pulumi-kubernetes/pull/3135/files)
+
 ### Fixed
 
 - Updated logic to accurately detect if a resource is a Patch variant. (https://github.com/pulumi/pulumi-kubernetes/pull/3102)
